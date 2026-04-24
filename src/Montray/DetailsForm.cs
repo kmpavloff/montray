@@ -9,10 +9,10 @@ public sealed class DetailsForm : Form
 
     public DetailsForm()
     {
-        Text = "montray details";
+        Text = "montray temperatures";
         StartPosition = FormStartPosition.CenterScreen;
-        Size = new Size(760, 420);
-        MinimumSize = new Size(560, 320);
+        Size = new Size(560, 260);
+        MinimumSize = new Size(460, 220);
 
         _statusLabel = new Label
         {
@@ -34,10 +34,9 @@ public sealed class DetailsForm : Form
             SelectionMode = DataGridViewSelectionMode.FullRowSelect
         };
 
-        _grid.Columns.Add("Category", "Category");
-        _grid.Columns.Add("Hardware", "Hardware");
+        _grid.Columns.Add("Component", "Component");
         _grid.Columns.Add("Sensor", "Sensor");
-        _grid.Columns.Add("Value", "Value");
+        _grid.Columns.Add("Value", "Temperature");
 
         Controls.Add(_grid);
         Controls.Add(_statusLabel);
@@ -47,18 +46,19 @@ public sealed class DetailsForm : Form
     {
         _grid.Rows.Clear();
 
-        foreach (var reading in readings)
+        var summaries = TemperatureReadingSelector.SelectTemperatureSummaries(readings);
+
+        foreach (var summary in summaries)
         {
             _grid.Rows.Add(
-                reading.Category,
-                reading.HardwareName,
-                reading.SensorName,
-                FormatValue(reading));
+                summary.Component,
+                FormatSensor(summary.Reading),
+                FormatValue(summary.Reading));
         }
 
-        _statusLabel.Text = readings.Count == 0
-            ? "No sensors detected."
-            : $"Sensors: {readings.Count}";
+        _statusLabel.Text = summaries.All(summary => summary.Reading is null)
+            ? "No temperature sensors detected."
+            : "Current temperatures";
     }
 
     public void ShowError(string message)
@@ -66,9 +66,16 @@ public sealed class DetailsForm : Form
         _statusLabel.Text = $"Sensor error: {message}";
     }
 
-    private static string FormatValue(SensorReading reading)
+    private static string FormatSensor(SensorReading? reading)
     {
-        return reading.Value is { } value
+        return reading is null
+            ? "N/A"
+            : $"{reading.HardwareName} / {reading.SensorName}";
+    }
+
+    private static string FormatValue(SensorReading? reading)
+    {
+        return reading?.Value is { } value
             ? $"{value:0.#} {reading.Unit}".TrimEnd()
             : "N/A";
     }

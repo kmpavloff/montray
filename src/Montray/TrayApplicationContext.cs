@@ -8,12 +8,17 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly HardwareMonitorService _hardwareMonitor;
     private readonly NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.Timer _timer;
+    private readonly ToolStripMenuItem _toggleWidgetMenuItem;
+    private Icon? _temperatureIcon;
     private DetailsForm? _detailsForm;
+    private FloatingWidgetForm? _floatingWidget;
     private IReadOnlyList<SensorReading> _lastReadings = Array.Empty<SensorReading>();
 
     public TrayApplicationContext(HardwareMonitorService hardwareMonitor)
     {
         _hardwareMonitor = hardwareMonitor;
+
+        _toggleWidgetMenuItem = new ToolStripMenuItem("Show widget", null, (_, _) => ToggleWidget());
 
         _notifyIcon = new NotifyIcon
         {
@@ -41,7 +46,9 @@ public sealed class TrayApplicationContext : ApplicationContext
             _timer.Dispose();
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
+            _temperatureIcon?.Dispose();
             _detailsForm?.Dispose();
+            _floatingWidget?.Dispose();
         }
 
         base.Dispose(disposing);
@@ -51,6 +58,7 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add("Show details", null, (_, _) => ShowDetails());
+        menu.Items.Add(_toggleWidgetMenuItem);
         menu.Items.Add("Refresh sensors", null, (_, _) => RefreshSensors());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => Exit());
@@ -63,12 +71,16 @@ public sealed class TrayApplicationContext : ApplicationContext
         {
             _lastReadings = _hardwareMonitor.GetReadings();
             _notifyIcon.Text = TrayTooltipFormatter.FormatSummary(_lastReadings);
+            UpdateTrayIcon();
             _detailsForm?.SetReadings(_lastReadings);
+            _floatingWidget?.SetReadings(_lastReadings);
         }
         catch (Exception ex)
         {
             _notifyIcon.Text = TrayTooltipFormatter.FormatSummary(Array.Empty<SensorReading>());
+            UpdateTrayIcon();
             _detailsForm?.ShowError(ex.Message);
+            _floatingWidget?.ShowError(ex.Message);
         }
     }
 
@@ -97,6 +109,34 @@ public sealed class TrayApplicationContext : ApplicationContext
         _detailsForm.SetReadings(_lastReadings);
         _detailsForm.Show();
         _detailsForm.Activate();
+    }
+
+    private void ToggleWidget()
+    {
+        if (_floatingWidget is not null && !_floatingWidget.IsDisposed && _floatingWidget.Visible)
+        {
+            _floatingWidget.Hide();
+            _toggleWidgetMenuItem.Text = "Show widget";
+            return;
+        }
+
+        if (_floatingWidget is null || _floatingWidget.IsDisposed)
+        {
+            _floatingWidget = new FloatingWidgetForm();
+        }
+
+        _floatingWidget.SetReadings(_lastReadings);
+        _floatingWidget.Show();
+        _floatingWidget.Activate();
+        _toggleWidgetMenuItem.Text = "Hide widget";
+    }
+
+    private void UpdateTrayIcon()
+    {
+        var previousIcon = _temperatureIcon;
+        _temperatureIcon = TrayTemperatureIconRenderer.Render(_lastReadings);
+        _notifyIcon.Icon = _temperatureIcon;
+        previousIcon?.Dispose();
     }
 
     private void Exit()
