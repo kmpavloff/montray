@@ -115,20 +115,30 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         if (_floatingWidget is not null && !_floatingWidget.IsDisposed && _floatingWidget.Visible)
         {
-            _floatingWidget.Hide();
-            _toggleWidgetMenuItem.Text = "Show widget";
+            HideWidget();
             return;
         }
 
         if (_floatingWidget is null || _floatingWidget.IsDisposed)
         {
-            _floatingWidget = new FloatingWidgetForm();
+            _floatingWidget = new FloatingWidgetForm(HideWidget, ShowDetails, Exit);
         }
 
         _floatingWidget.SetReadings(_lastReadings);
         _floatingWidget.Show();
         _floatingWidget.Activate();
         _toggleWidgetMenuItem.Text = "Hide widget";
+    }
+
+    private void HideWidget()
+    {
+        if (_floatingWidget is null || _floatingWidget.IsDisposed)
+        {
+            return;
+        }
+
+        _floatingWidget.Hide();
+        _toggleWidgetMenuItem.Text = "Show widget";
     }
 
     private void UpdateTrayIcon()

@@ -10,8 +10,12 @@ public sealed class FloatingWidgetForm : Form
 
     private readonly TableLayoutPanel _grid;
     private readonly Dictionary<string, MetricTile> _tiles = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ContextMenuStrip _contextMenu;
 
-    public FloatingWidgetForm()
+    public FloatingWidgetForm(
+        Action hideWidget,
+        Action showDetails,
+        Action exitApplication)
     {
         Text = "montray widget";
         FormBorderStyle = FormBorderStyle.None;
@@ -44,6 +48,10 @@ public sealed class FloatingWidgetForm : Form
         Controls.Add(_grid);
         MouseDown += BeginDrag;
         _grid.MouseDown += BeginDrag;
+
+        _contextMenu = BuildContextMenu(hideWidget, showDetails, exitApplication);
+        ContextMenuStrip = _contextMenu;
+        _grid.ContextMenuStrip = _contextMenu;
 
         AddTile("CPU", 0, 0);
         AddTile("GPU", 1, 0);
@@ -85,7 +93,21 @@ public sealed class FloatingWidgetForm : Form
         tile.ForwardMouseDownTo(BeginDrag);
 
         _tiles.Add(component, tile);
+        tile.AssignContextMenu(_contextMenu);
         _grid.Controls.Add(tile, column, row);
+    }
+
+    private static ContextMenuStrip BuildContextMenu(
+        Action hideWidget,
+        Action showDetails,
+        Action exitApplication)
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Hide widget", null, (_, _) => hideWidget());
+        menu.Items.Add("Show details", null, (_, _) => showDetails());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Exit", null, (_, _) => exitApplication());
+        return menu;
     }
 
     private void BeginDrag(object? sender, MouseEventArgs e)
@@ -196,6 +218,21 @@ public sealed class FloatingWidgetForm : Form
                 foreach (Control child in control.Controls)
                 {
                     child.MouseDown += handler;
+                }
+            }
+        }
+
+        public void AssignContextMenu(ContextMenuStrip contextMenu)
+        {
+            ContextMenuStrip = contextMenu;
+
+            foreach (Control control in Controls)
+            {
+                control.ContextMenuStrip = contextMenu;
+
+                foreach (Control child in control.Controls)
+                {
+                    child.ContextMenuStrip = contextMenu;
                 }
             }
         }
