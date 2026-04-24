@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish Windows build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore .\Montray.sln
+
+      - name: Test
+        run: dotnet test .\Montray.sln --configuration Release
+
+      - name: Publish
+        run: >
+          dotnet publish .\src\Montray\Montray.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --output .\artifacts\publish
+          -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'
+          $archive = "montray-$version-win-x64.zip"
+          Compress-Archive -Path .\artifacts\publish\* -DestinationPath ".\artifacts\$archive" -Force
+          "ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: .\artifacts\${{ env.ARCHIVE }}
+          generate_release_notes: true
