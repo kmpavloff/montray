@@ -38,9 +38,9 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 Quick local commands:
 
 ```powershell
-dotnet restore .\src\Montray\Montray.csproj
-dotnet build .\src\Montray\Montray.csproj
-dotnet test .\tests\Montray.Core.Tests\Montray.Core.Tests.csproj
+dotnet restore .\Montray.sln
+dotnet build .\Montray.sln
+dotnet test .\Montray.sln
 dotnet run --project .\src\Montray\Montray.csproj
 ```
 
