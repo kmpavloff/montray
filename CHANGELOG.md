@@ -5,6 +5,7 @@
 - Added CI workflow for build and tests.
 - Added release workflow for tagged Windows builds.
 - Added install and development documentation.
+- Added MIT license and third-party notices.
 
 ## v0.1.0
 

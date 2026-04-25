@@ -25,6 +25,12 @@ Some CPU and motherboard sensors require administrator privileges and low-level 
 
 See [docs/INSTALL.md](docs/INSTALL.md).
 
+## License
+
+montray is licensed under the [MIT License](LICENSE).
+
+Third-party dependencies are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Development
 
 See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).

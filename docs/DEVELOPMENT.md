@@ -68,3 +68,7 @@ git push origin v0.1.0
 ```
 
 The release workflow publishes a self-contained `win-x64` zip and attaches it to a GitHub Release.
+
+## Licensing
+
+montray code is licensed under MIT. Third-party dependencies keep their own licenses; update `THIRD_PARTY_NOTICES.md` when adding or changing dependencies.
