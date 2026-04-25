@@ -20,6 +20,7 @@ It is tray-first: the app runs quietly in the notification area, updates a dynam
 - Published releases are planned as self-contained Windows x64 builds.
 
 Some CPU and motherboard sensors require administrator privileges and low-level hardware access through PawnIO/LibreHardwareMonitor support.
+For real hardware validation, start `montray` from an elevated Windows PowerShell or Windows Terminal session.
 
 ## Install
 
@@ -45,6 +46,7 @@ dotnet run --project .\src\Montray\Montray.csproj
 ```
 
 Build, run, tray testing, and hardware validation should happen on Windows, not WSL Linux.
+Run the app from an administrator PowerShell/Terminal when checking real sensor availability; otherwise some temperatures may be missing even though the app works.
 
 ## Releases
 

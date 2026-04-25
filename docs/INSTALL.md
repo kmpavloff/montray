@@ -12,6 +12,8 @@ Run:
 .\montray.exe
 ```
 
+For best sensor coverage, run `montray.exe` as administrator. Without elevated privileges the app may still start, but some CPU, motherboard, or storage sensors can be unavailable.
+
 ## Sensor Access
 
 CPU and motherboard sensors may require elevated permissions and a low-level hardware access driver. If CPU temperature is missing:

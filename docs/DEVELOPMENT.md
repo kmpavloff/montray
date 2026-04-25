@@ -37,6 +37,8 @@ Run locally:
 dotnet run --project .\src\Montray\Montray.csproj
 ```
 
+For hardware validation, run that command from an administrator Windows PowerShell or Windows Terminal session. A non-elevated run is useful for UI checks, but LibreHardwareMonitor may not expose every sensor without elevated privileges.
+
 Publish a local release build:
 
 ```powershell

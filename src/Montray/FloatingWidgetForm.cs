@@ -3,14 +3,14 @@ using Montray.Core;
 
 namespace Montray;
 
-public sealed class FloatingWidgetForm : Form
+internal sealed class FloatingWidgetForm : Form
 {
     private const int WmNclButtonDown = 0xA1;
     private const int HtCaption = 0x2;
 
-    private readonly TableLayoutPanel _grid;
-    private readonly Dictionary<string, MetricTile> _tiles = new(StringComparer.OrdinalIgnoreCase);
+    private readonly FlowLayoutPanel _panel;
     private readonly ContextMenuStrip _contextMenu;
+    private readonly Dictionary<string, TemperatureTileControl> _tiles = new(StringComparer.OrdinalIgnoreCase);
 
     public FloatingWidgetForm(
         Action hideWidget,
@@ -24,7 +24,7 @@ public sealed class FloatingWidgetForm : Form
         TopMost = true;
         BackColor = Color.FromArgb(20, 23, 28);
         ForeColor = Color.White;
-        Size = new Size(280, 190);
+        Size = new Size(340, 220);
         MinimumSize = Size;
         MaximumSize = Size;
         Opacity = 0.96;
@@ -32,69 +32,85 @@ public sealed class FloatingWidgetForm : Form
         var workingArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 720);
         Location = new Point(workingArea.Right - Width - 16, workingArea.Bottom - Height - 16);
 
-        _grid = new TableLayoutPanel
+        _panel = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 2,
             Padding = new Padding(10),
-            BackColor = BackColor
+            BackColor = BackColor,
+            AutoScroll = true,
+            WrapContents = true
         };
-        _grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        _grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        _grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-        _grid.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
-        Controls.Add(_grid);
+        Controls.Add(_panel);
         MouseDown += BeginDrag;
-        _grid.MouseDown += BeginDrag;
+        _panel.MouseDown += BeginDrag;
 
         _contextMenu = BuildContextMenu(hideWidget, showDetails, exitApplication);
         ContextMenuStrip = _contextMenu;
-        _grid.ContextMenuStrip = _contextMenu;
-
-        AddTile("CPU", 0, 0);
-        AddTile("GPU", 1, 0);
-        AddTile("RAM", 0, 1);
-        AddTile("SSD", 1, 1);
+        _panel.ContextMenuStrip = _contextMenu;
     }
 
-    public void SetReadings(IReadOnlyList<SensorReading> readings)
+    public void SetReadings(
+        IReadOnlyList<SensorReading> readings,
+        IReadOnlySet<string> widgetSensorKeys,
+        SensorHistoryStore history)
     {
-        var summaries = TemperatureReadingSelector.SelectTemperatureSummaries(readings)
-            .Where(summary => _tiles.ContainsKey(summary.Component))
-            .ToDictionary(summary => summary.Component, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (component, tile) in _tiles)
-        {
-            summaries.TryGetValue(component, out var summary);
-            tile.SetReading(summary?.Reading);
-        }
+        var selected = SelectWidgetReadings(readings, widgetSensorKeys);
+        UpdateTiles(selected, history);
     }
 
     public void ShowError(string message)
     {
-        foreach (var tile in _tiles.Values)
-        {
-            tile.SetError();
-        }
-
         Text = $"montray widget | {message}";
     }
 
-    private void AddTile(string component, int column, int row)
+    private static IReadOnlyList<SensorReading> SelectWidgetReadings(
+        IReadOnlyList<SensorReading> readings,
+        IReadOnlySet<string> widgetSensorKeys)
     {
-        var tile = new MetricTile(component)
+        var temperatures = TemperatureReadingSelector.SelectDisplayTemperatures(readings);
+        if (widgetSensorKeys.Count > 0)
         {
-            Dock = DockStyle.Fill,
-            Margin = new Padding(4)
-        };
-        tile.MouseDown += BeginDrag;
-        tile.ForwardMouseDownTo(BeginDrag);
+            return temperatures
+                .Where(reading => widgetSensorKeys.Contains(SensorReadingIdentity.CreateKey(reading)))
+                .ToArray();
+        }
 
-        _tiles.Add(component, tile);
-        tile.AssignContextMenu(_contextMenu);
-        _grid.Controls.Add(tile, column, row);
+        return TemperatureReadingSelector.SelectTemperatureSummaries(readings)
+            .Select(summary => summary.Reading)
+            .OfType<SensorReading>()
+            .Take(4)
+            .ToArray();
+    }
+
+    private void UpdateTiles(IReadOnlyList<SensorReading> readings, SensorHistoryStore history)
+    {
+        _panel.SuspendLayout();
+
+        foreach (var key in _tiles.Keys.Except(readings.Select(SensorReadingIdentity.CreateKey)).ToArray())
+        {
+            var tile = _tiles[key];
+            _panel.Controls.Remove(tile);
+            tile.Dispose();
+            _tiles.Remove(key);
+        }
+
+        foreach (var reading in readings)
+        {
+            var key = SensorReadingIdentity.CreateKey(reading);
+            if (!_tiles.TryGetValue(key, out var tile))
+            {
+                tile = new TemperatureTileControl { Size = new Size(150, 92) };
+                tile.MouseDown += BeginDrag;
+                tile.ContextMenuStrip = _contextMenu;
+                _tiles.Add(key, tile);
+                _panel.Controls.Add(tile);
+            }
+
+            tile.SetReading(reading, history.GetSamples(key));
+        }
+
+        _panel.ResumeLayout();
     }
 
     private static ContextMenuStrip BuildContextMenu(
@@ -126,126 +142,4 @@ public sealed class FloatingWidgetForm : Form
 
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
-
-    private sealed class MetricTile : Panel
-    {
-        private readonly Label _componentLabel;
-        private readonly Label _valueLabel;
-        private readonly Panel _statusBar;
-
-        public MetricTile(string component)
-        {
-            BackColor = Color.FromArgb(34, 39, 46);
-            Padding = new Padding(8, 6, 8, 0);
-
-            var layout = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 1,
-                RowCount = 3,
-                BackColor = BackColor,
-                Margin = Padding.Empty,
-                Padding = Padding.Empty
-            };
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 4));
-
-            _componentLabel = new Label
-            {
-                Dock = DockStyle.Fill,
-                Text = component,
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.FromArgb(178, 187, 198),
-                Font = new Font("Segoe UI", 8.5f, FontStyle.Bold),
-                AutoSize = false,
-                BackColor = BackColor,
-                Margin = Padding.Empty
-            };
-
-            _valueLabel = new Label
-            {
-                Dock = DockStyle.Fill,
-                Text = "N/A",
-                TextAlign = ContentAlignment.MiddleCenter,
-                ForeColor = Color.White,
-                Font = new Font("Segoe UI", 18f, FontStyle.Bold),
-                AutoSize = false,
-                BackColor = BackColor,
-                Margin = Padding.Empty
-            };
-
-            _statusBar = new Panel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = Color.FromArgb(82, 91, 102),
-                Margin = Padding.Empty
-            };
-
-            layout.Controls.Add(_componentLabel, 0, 0);
-            layout.Controls.Add(_valueLabel, 0, 1);
-            layout.Controls.Add(_statusBar, 0, 2);
-            Controls.Add(layout);
-
-            layout.MouseDown += (_, e) => OnMouseDown(e);
-        }
-
-        public void SetReading(SensorReading? reading)
-        {
-            if (reading?.Value is not { } value)
-            {
-                _valueLabel.Text = "N/A";
-                _statusBar.BackColor = Color.FromArgb(82, 91, 102);
-                return;
-            }
-
-            _valueLabel.Text = $"{MathF.Round(value)}°C";
-            _statusBar.BackColor = SelectTemperatureColor(value);
-        }
-
-        public void SetError()
-        {
-            _valueLabel.Text = "ERR";
-            _statusBar.BackColor = Color.FromArgb(188, 42, 42);
-        }
-
-        public void ForwardMouseDownTo(MouseEventHandler handler)
-        {
-            foreach (Control control in Controls)
-            {
-                control.MouseDown += handler;
-
-                foreach (Control child in control.Controls)
-                {
-                    child.MouseDown += handler;
-                }
-            }
-        }
-
-        public void AssignContextMenu(ContextMenuStrip contextMenu)
-        {
-            ContextMenuStrip = contextMenu;
-
-            foreach (Control control in Controls)
-            {
-                control.ContextMenuStrip = contextMenu;
-
-                foreach (Control child in control.Controls)
-                {
-                    child.ContextMenuStrip = contextMenu;
-                }
-            }
-        }
-
-        private static Color SelectTemperatureColor(float temperature)
-        {
-            return temperature switch
-            {
-                >= 90 => Color.FromArgb(220, 64, 64),
-                >= 75 => Color.FromArgb(228, 118, 49),
-                >= 60 => Color.FromArgb(218, 166, 51),
-                _ => Color.FromArgb(50, 168, 113)
-            };
-        }
-    }
 }
