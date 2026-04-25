@@ -36,14 +36,34 @@ jobs:
           --self-contained true
           --output .\artifacts\publish
           -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
           -p:EnableCompressionInSingleFile=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
 
       - name: Package
         shell: pwsh
         run: |
           $version = '${{ github.ref_name }}'
           $archive = "montray-$version-win-x64.zip"
-          Compress-Archive -Path .\artifacts\publish\* -DestinationPath ".\artifacts\$archive" -Force
+          $packageDir = ".\artifacts\package"
+          if (Test-Path $packageDir) {
+            Remove-Item $packageDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
+
+          Copy-Item .\artifacts\publish\montray.exe $packageDir
+          Copy-Item .\LICENSE $packageDir
+          Copy-Item .\THIRD_PARTY_NOTICES.md $packageDir
+          Copy-Item .\docs\INSTALL.md "$packageDir\README.md"
+
+          $forbiddenFiles = Get-ChildItem $packageDir -Recurse -Include *.cs,*.csproj,*.sln
+          if ($forbiddenFiles) {
+            $forbiddenFiles | ForEach-Object { Write-Error "Unexpected source file in package: $($_.FullName)" }
+            exit 1
+          }
+
+          Compress-Archive -Path "$packageDir\*" -DestinationPath ".\artifacts\$archive" -Force
           "ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Create GitHub Release

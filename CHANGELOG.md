@@ -2,10 +2,14 @@
 
 ## Unreleased
 
+## v0.1.1
+
 - Added CI workflow for build and tests.
 - Added release workflow for tagged Windows builds.
 - Added install and development documentation.
 - Added MIT license and third-party notices.
+- Fixed release packaging so the custom ZIP contains only the executable, license files, and install instructions.
+- Documented that GitHub's automatic source archives are separate from the app distribution ZIP.
 
 ## v0.1.0
 
