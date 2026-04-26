@@ -2,7 +2,7 @@
 
 montray is a small Windows tray utility for monitoring hardware temperatures.
 
-It is tray-first: the app runs quietly in the notification area, updates a dynamic tray icon, and can show a compact floating widget when needed.
+It is tray-first: the app runs quietly in the notification area, updates a dynamic tray icon, and can show a compact floating widget when needed. The tray app itself is intended to run without administrator rights.
 
 ## Features
 
@@ -10,6 +10,7 @@ It is tray-first: the app runs quietly in the notification area, updates a dynam
 - Floating widget with CPU, GPU, RAM, and SSD temperatures.
 - Details window with summarized current temperatures.
 - Tray menu with details, widget toggle, refresh, and exit actions.
+- Optional Windows Service for elevated sensor access without running the tray app as administrator.
 - Sensor backend powered by `LibreHardwareMonitorLib`.
 - Graceful missing-sensor behavior through `N/A`.
 
@@ -19,12 +20,26 @@ It is tray-first: the app runs quietly in the notification area, updates a dynam
 - .NET 8 runtime for framework-dependent local runs.
 - Published releases are planned as self-contained Windows x64 builds.
 
-Some CPU and motherboard sensors require administrator privileges and low-level hardware access through PawnIO/LibreHardwareMonitor support.
-For real hardware validation, start `montray` from an elevated Windows PowerShell or Windows Terminal session.
+Some CPU and motherboard sensors require elevated access. The tray app can install the optional `montray sensor service` through its menu; UAC is required only for service install/uninstall.
 
 ## Install
 
 See [docs/INSTALL.md](docs/INSTALL.md).
+
+Release ZIP packages include a user-facing `README.txt` with first-run, service install/uninstall, and troubleshooting steps.
+
+## Sensor Service
+
+`montray.exe` first tries to read sensor data from the optional Windows Service. If the service is not installed or not reachable, it falls back to local non-elevated sensor reads and shows unavailable values as `N/A`.
+
+The service is installed from the tray menu:
+
+1. Run `montray.exe`.
+2. Open the tray menu.
+3. Choose `Install sensor service`.
+4. Approve the UAC prompt.
+
+The service can also be removed from the tray menu with `Uninstall sensor service`.
 
 ## License
 
@@ -46,7 +61,7 @@ dotnet run --project .\src\Montray\Montray.csproj
 ```
 
 Build, run, tray testing, and hardware validation should happen on Windows, not WSL Linux.
-Run the app from an administrator PowerShell/Terminal when checking real sensor availability; otherwise some temperatures may be missing even though the app works.
+For full CPU/motherboard sensor coverage without running the tray app as administrator, build the solution and use the tray menu item `Install sensor service`.
 
 ## Releases
 
@@ -54,9 +69,19 @@ Releases are created from tags named like `v0.1.0`.
 
 The release workflow publishes a self-contained `win-x64` zip and attaches it to a GitHub Release.
 
+The package contains:
+
+- `montray.exe`
+- `montray-service.exe`
+- `scripts\install-service.ps1`
+- `scripts\uninstall-service.ps1`
+- `README.txt`
+- license and third-party notice files
+
 ## Limitations
 
 - No installer yet.
 - No autostart setting yet.
 - No code signing yet.
+- Service install/uninstall currently uses elevated PowerShell scripts.
 - Sensor availability depends on hardware, BIOS, drivers, permissions, and LibreHardwareMonitor support.

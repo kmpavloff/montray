@@ -1,17 +1,24 @@
 using Montray.Core;
 using Montray.Hardware;
+using Montray.ServiceManagement;
 
 namespace Montray;
 
 public sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly HardwareMonitorService _hardwareMonitor;
+    private readonly SensorPipeClient _sensorPipeClient = new();
+    private readonly SensorServiceManager _sensorServiceManager = new();
     private readonly NotifyIcon _notifyIcon;
     private readonly SensorHistoryStore _history = new();
     private readonly UserSensorSelectionStore _selectionStore = new();
     private readonly SemaphoreSlim _hardwareAccess = new(1, 1);
     private readonly System.Windows.Forms.Timer _timer;
     private readonly ToolStripMenuItem _toggleWidgetMenuItem;
+    private readonly ToolStripMenuItem _serviceStatusMenuItem;
+    private readonly ToolStripMenuItem _installServiceMenuItem;
+    private readonly ToolStripMenuItem _uninstallServiceMenuItem;
+    private readonly ToolStripMenuItem _refreshServiceStatusMenuItem;
     private readonly HashSet<string> _mainSensorKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _widgetSensorKeys = new(StringComparer.OrdinalIgnoreCase);
     private Icon? _temperatureIcon;
@@ -20,6 +27,9 @@ public sealed class TrayApplicationContext : ApplicationContext
     private IReadOnlyList<SensorReading> _lastReadings = Array.Empty<SensorReading>();
     private bool _mainSensorsInitialized;
     private bool _isPolling;
+    private bool _lastReadUsedService;
+    private string? _serviceOperationText;
+    private DateTime _serviceOperationPollUntil;
 
     public TrayApplicationContext(HardwareMonitorService hardwareMonitor)
     {
@@ -27,6 +37,13 @@ public sealed class TrayApplicationContext : ApplicationContext
         LoadUserSelection();
 
         _toggleWidgetMenuItem = new ToolStripMenuItem("Show widget", null, (_, _) => ToggleWidget());
+        _serviceStatusMenuItem = new ToolStripMenuItem("Sensor service: checking")
+        {
+            Enabled = false
+        };
+        _installServiceMenuItem = new ToolStripMenuItem("Install sensor service", null, (_, _) => InstallSensorService());
+        _uninstallServiceMenuItem = new ToolStripMenuItem("Uninstall sensor service", null, (_, _) => UninstallSensorService());
+        _refreshServiceStatusMenuItem = new ToolStripMenuItem("Refresh service status", null, async (_, _) => await RefreshServiceStatusAsync());
 
         _notifyIcon = new NotifyIcon
         {
@@ -66,11 +83,18 @@ public sealed class TrayApplicationContext : ApplicationContext
     private ContextMenuStrip BuildContextMenu()
     {
         var menu = new ContextMenuStrip();
+        menu.Opening += (_, _) => UpdateServiceMenuItems();
         menu.Items.Add("Show details", null, (_, _) => ShowDetails());
         menu.Items.Add(_toggleWidgetMenuItem);
         menu.Items.Add("Refresh sensors", null, async (_, _) => await RefreshSensorsAsync());
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_serviceStatusMenuItem);
+        menu.Items.Add(_installServiceMenuItem);
+        menu.Items.Add(_uninstallServiceMenuItem);
+        menu.Items.Add(_refreshServiceStatusMenuItem);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => Exit());
+        UpdateServiceMenuItems();
         return menu;
     }
 
@@ -102,6 +126,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
         finally
         {
+            UpdateServiceMenuItems();
             _isPolling = false;
         }
     }
@@ -122,6 +147,15 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private async Task<IReadOnlyList<SensorReading>> ReadHardwareAsync()
     {
+        var serviceReadings = await _sensorPipeClient.GetReadingsAsync(TimeSpan.FromMilliseconds(500));
+        if (serviceReadings is not null)
+        {
+            _lastReadUsedService = true;
+            return serviceReadings;
+        }
+
+        _lastReadUsedService = false;
+
         await _hardwareAccess.WaitAsync();
         try
         {
@@ -135,6 +169,16 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private async Task RefreshHardwareAsync()
     {
+        var serviceReadings = await _sensorPipeClient.RefreshAsync(TimeSpan.FromMilliseconds(800));
+        if (serviceReadings is not null)
+        {
+            _lastReadUsedService = true;
+            _lastReadings = serviceReadings;
+            return;
+        }
+
+        _lastReadUsedService = false;
+
         await _hardwareAccess.WaitAsync();
         try
         {
@@ -144,6 +188,116 @@ public sealed class TrayApplicationContext : ApplicationContext
         {
             _hardwareAccess.Release();
         }
+    }
+
+    private void InstallSensorService()
+    {
+        var result = MessageBox.Show(
+            "Windows will show a UAC prompt to install the sensor service. The elevated PowerShell window will stay open with the result.",
+            "montray",
+            MessageBoxButtons.OKCancel,
+            MessageBoxIcon.Information);
+
+        if (result != DialogResult.OK)
+        {
+            return;
+        }
+
+        if (!_sensorServiceManager.TryLaunchInstall(out var errorMessage))
+        {
+            MessageBox.Show(errorMessage, "montray", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        TrackServiceOperation("installing");
+    }
+
+    private void UninstallSensorService()
+    {
+        var result = MessageBox.Show(
+            "Windows will show a UAC prompt to remove the sensor service. The elevated PowerShell window will stay open with the result.",
+            "montray",
+            MessageBoxButtons.OKCancel,
+            MessageBoxIcon.Warning);
+
+        if (result != DialogResult.OK)
+        {
+            return;
+        }
+
+        if (!_sensorServiceManager.TryLaunchUninstall(out var errorMessage))
+        {
+            MessageBox.Show(errorMessage, "montray", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        TrackServiceOperation("removing");
+    }
+
+    private void UpdateServiceMenuItems()
+    {
+        var state = _sensorServiceManager.GetState();
+        if (_serviceOperationText == "installing" && state == SensorServiceState.Running)
+        {
+            _serviceOperationText = null;
+        }
+        else if (_serviceOperationText == "removing" && state == SensorServiceState.NotInstalled)
+        {
+            _serviceOperationText = null;
+        }
+
+        _serviceStatusMenuItem.Text = $"Sensor service: {FormatServiceState(state)}";
+        _installServiceMenuItem.Enabled = state is SensorServiceState.NotInstalled or SensorServiceState.Stopped;
+        _uninstallServiceMenuItem.Enabled = state is not SensorServiceState.NotInstalled;
+
+        if (_serviceOperationText is not null)
+        {
+            if (DateTime.UtcNow <= _serviceOperationPollUntil)
+            {
+                _serviceStatusMenuItem.Text += $" ({_serviceOperationText})";
+            }
+            else
+            {
+                _serviceOperationText = null;
+            }
+        }
+
+        if (_lastReadUsedService && state == SensorServiceState.Running)
+        {
+            _serviceStatusMenuItem.Text += " (used)";
+        }
+    }
+
+    private async Task RefreshServiceStatusAsync()
+    {
+        _serviceOperationText = null;
+        UpdateServiceMenuItems();
+        await UpdateReadingsAsync();
+    }
+
+    private void TrackServiceOperation(string operationText)
+    {
+        _serviceOperationText = operationText;
+        _serviceOperationPollUntil = DateTime.UtcNow.AddMinutes(2);
+        UpdateServiceMenuItems();
+        _notifyIcon.ShowBalloonTip(
+            4000,
+            "montray",
+            "Service command started. Check the elevated PowerShell window for the result.",
+            ToolTipIcon.Info);
+    }
+
+    private static string FormatServiceState(SensorServiceState state)
+    {
+        return state switch
+        {
+            SensorServiceState.NotInstalled => "not installed",
+            SensorServiceState.Stopped => "stopped",
+            SensorServiceState.StartPending => "starting",
+            SensorServiceState.Running => "running",
+            SensorServiceState.StopPending => "stopping",
+            _ => "unknown"
+        };
     }
 
     private void ShowDetails()

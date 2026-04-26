@@ -1,0 +1,66 @@
+montray user guide
+==================
+
+montray is a small Windows tray utility for monitoring hardware temperatures.
+
+Files in this package
+---------------------
+
+- montray.exe: the tray application.
+- montray-service.exe: optional Windows Service for elevated sensor access.
+- scripts\install-service.ps1: installs or updates the sensor service.
+- scripts\uninstall-service.ps1: removes the sensor service.
+- README.txt: this user guide.
+- LICENSE and THIRD_PARTY_NOTICES.md: license information.
+
+First run
+---------
+
+1. Extract the ZIP to a local folder.
+2. Run montray.exe.
+3. Use the tray icon menu to open Show details or Show widget.
+
+Sensor service
+--------------
+
+Some CPU and motherboard sensors are not available to a normal user process.
+If CPU temperature is missing, install the optional sensor service:
+
+1. Open the montray tray menu.
+2. Choose Install sensor service.
+3. Confirm the Windows UAC prompt.
+4. Wait until the PowerShell window says:
+   montray sensor service is installed and running.
+5. Press Enter to close the PowerShell window.
+
+After that, montray.exe continues to run without administrator rights and reads
+elevated sensor data from the service.
+
+To remove the service:
+
+1. Open the montray tray menu.
+2. Choose Uninstall sensor service.
+3. Confirm the Windows UAC prompt.
+4. Press Enter when the PowerShell window reports completion.
+
+Troubleshooting
+---------------
+
+If service installation fails, check:
+
+%LOCALAPPDATA%\montray\logs\install-service.log
+
+If service removal fails, check:
+
+%LOCALAPPDATA%\montray\logs\uninstall-service.log
+
+If temperatures are still missing after service installation, the hardware,
+BIOS, driver, or LibreHardwareMonitor backend may not expose that sensor.
+Some systems may also require a trusted low-level driver such as PawnIO.
+
+Security notes
+--------------
+
+Current builds are not code-signed, so Windows may show Unknown publisher or
+SmartScreen warnings. Only run builds downloaded from the official GitHub
+Releases page for this project.

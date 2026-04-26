@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v0.1.2
+
+- Added optional Windows Service for elevated hardware sensor access.
+- Added tray menu service status, install, uninstall, and refresh actions.
+- Added named pipe IPC between the tray app and sensor service.
+- Moved LibreHardwareMonitor integration into a shared hardware project.
+- Added elevated PowerShell install/uninstall scripts with logs.
+- Added a user-facing `README.txt` to release packages.
+- Updated release packaging to include the tray app, sensor service, service scripts, and user guide.
+
 ## v0.1.1
 
 - Added CI workflow for build and tests.

@@ -6,21 +6,30 @@ montray is a Windows-only tray utility.
 
 Download the latest `montray-*-win-x64.zip` from GitHub Releases and extract it to a local folder.
 
+The package includes `README.txt` with end-user setup and troubleshooting notes.
+
 Run:
 
 ```powershell
 .\montray.exe
 ```
 
-For best sensor coverage, run `montray.exe` as administrator. Without elevated privileges the app may still start, but some CPU, motherboard, or storage sensors can be unavailable.
+For best sensor coverage, install the optional sensor service from the tray menu:
+
+1. Start `montray.exe`.
+2. Open the tray menu.
+3. Choose `Install sensor service`.
+4. Approve the UAC prompt.
+
+After installation, the tray app keeps running as a normal user process and reads elevated sensor data from `montray sensor service`.
 
 ## Sensor Access
 
 CPU and motherboard sensors may require elevated permissions and a low-level hardware access driver. If CPU temperature is missing:
 
-1. Run `montray.exe` as administrator.
-2. Install PawnIO from a trusted source.
-3. Restart `montray` as administrator.
+1. Install `montray sensor service` from the tray menu.
+2. Install PawnIO from a trusted source if your hardware still requires it.
+3. Restart the service or reinstall it from the tray menu.
 
 Available sensors depend on the hardware, BIOS, drivers, and LibreHardwareMonitor support.
 
@@ -40,8 +49,9 @@ winget install PawnIO
 After installation:
 
 1. Fully exit `montray`.
-2. Start `montray.exe` again as administrator.
-3. Open `Show details` or `Show widget` and check whether CPU/motherboard temperatures appear.
+2. Start `montray.exe`.
+3. Install or reinstall `montray sensor service` from the tray menu.
+4. Open `Show details` or `Show widget` and check whether CPU/motherboard temperatures appear.
 
 Security note: PawnIO runs in kernel mode. Install it only if you need sensors that are otherwise missing, and only from a source you trust.
 
@@ -50,6 +60,7 @@ Security note: PawnIO runs in kernel mode. Install it only if you need sensors t
 - No installer yet.
 - No autostart setting yet.
 - No code signing yet, so Windows may show a warning for downloaded builds.
+- Service install/uninstall currently uses elevated PowerShell scripts.
 - The app currently targets Windows x64 releases.
 
 ## Windows Security Warnings

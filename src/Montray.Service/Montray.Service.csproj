@@ -1,21 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>montray</AssemblyName>
-    <RootNamespace>Montray</RootNamespace>
+    <AssemblyName>montray-service</AssemblyName>
+    <RootNamespace>Montray.Service</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="System.IO.Pipes.AccessControl" Version="5.0.0" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Montray.Hardware\Montray.Hardware.csproj" />
     <ProjectReference Include="..\Montray.Core\Montray.Core.csproj" />
+    <ProjectReference Include="..\Montray.Hardware\Montray.Hardware.csproj" />
   </ItemGroup>
 </Project>

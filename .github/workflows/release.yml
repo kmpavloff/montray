@@ -28,13 +28,26 @@ jobs:
       - name: Test
         run: dotnet test .\Montray.sln --configuration Release
 
-      - name: Publish
+      - name: Publish tray app
         run: >
           dotnet publish .\src\Montray\Montray.csproj
           --configuration Release
           --runtime win-x64
           --self-contained true
           --output .\artifacts\publish
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:EnableCompressionInSingleFile=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
+
+      - name: Publish sensor service
+        run: >
+          dotnet publish .\src\Montray.Service\Montray.Service.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          --output .\artifacts\publish-service
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
           -p:EnableCompressionInSingleFile=true
@@ -53,6 +66,11 @@ jobs:
           New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
 
           Copy-Item .\artifacts\publish\montray.exe $packageDir
+          Copy-Item .\artifacts\publish-service\montray-service.exe $packageDir
+          New-Item -ItemType Directory -Path "$packageDir\scripts" -Force | Out-Null
+          Copy-Item .\scripts\install-service.ps1 "$packageDir\scripts"
+          Copy-Item .\scripts\uninstall-service.ps1 "$packageDir\scripts"
+          Copy-Item .\docs\USER_GUIDE.txt "$packageDir\README.txt"
           Copy-Item .\LICENSE $packageDir
           Copy-Item .\THIRD_PARTY_NOTICES.md $packageDir
           Copy-Item .\docs\INSTALL.md "$packageDir\README.md"
