@@ -6,20 +6,27 @@ internal sealed class DetailsForm : Form
 {
     private readonly Action<string, bool> _setMainSensor;
     private readonly Action<string, bool> _setWidgetSensor;
+    private readonly Action<string> _setTraySensor;
     private readonly FlowLayoutPanel _dashboardPanel;
+    private readonly ComboBox _categoryFilter;
+    private readonly TextBox _searchBox;
     private readonly DataGridView _grid;
     private readonly Label _statusLabel;
     private readonly Dictionary<string, TemperatureTileControl> _tiles = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _mainSensorKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _widgetSensorKeys = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<SensorReading> _lastTemperatures = Array.Empty<SensorReading>();
+    private string? _traySensorKey;
     private bool _isUpdatingGrid;
 
     public DetailsForm(
         Action<string, bool> setMainSensor,
-        Action<string, bool> setWidgetSensor)
+        Action<string, bool> setWidgetSensor,
+        Action<string> setTraySensor)
     {
         _setMainSensor = setMainSensor;
         _setWidgetSensor = setWidgetSensor;
+        _setTraySensor = setTraySensor;
 
         Text = "montray sensors";
         StartPosition = FormStartPosition.CenterScreen;
@@ -41,12 +48,40 @@ internal sealed class DetailsForm : Form
         _dashboardPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 218,
+            Height = 206,
             Padding = new Padding(12, 12, 2, 2),
             AutoScroll = true,
             WrapContents = true,
             BackColor = Color.FromArgb(24, 28, 33)
         };
+
+        var filterPanel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 38,
+            Padding = new Padding(12, 4, 12, 4),
+            BackColor = Color.FromArgb(24, 28, 33)
+        };
+        _categoryFilter = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Location = new Point(12, 7),
+            Size = new Size(120, 24)
+        };
+        _categoryFilter.Items.AddRange(["All", "CPU", "GPU", "RAM", "SSD", "Board"]);
+        _categoryFilter.SelectedIndex = 0;
+        _categoryFilter.SelectedIndexChanged += (_, _) => UpdateGrid(_lastTemperatures);
+
+        _searchBox = new TextBox
+        {
+            Location = new Point(144, 7),
+            Size = new Size(260, 24),
+            PlaceholderText = "Search sensors"
+        };
+        _searchBox.TextChanged += (_, _) => UpdateGrid(_lastTemperatures);
+
+        filterPanel.Controls.Add(_categoryFilter);
+        filterPanel.Controls.Add(_searchBox);
 
         _grid = new DataGridView
         {
@@ -66,6 +101,7 @@ internal sealed class DetailsForm : Form
 
         Controls.Add(_grid);
         Controls.Add(_dashboardPanel);
+        Controls.Add(filterPanel);
         Controls.Add(_statusLabel);
     }
 
@@ -73,20 +109,24 @@ internal sealed class DetailsForm : Form
         IReadOnlyList<SensorReading> readings,
         IReadOnlySet<string> mainSensorKeys,
         IReadOnlySet<string> widgetSensorKeys,
+        string? traySensorKey,
+        TemperatureThresholds thresholds,
         SensorHistoryStore history)
     {
         _mainSensorKeys.Clear();
         _mainSensorKeys.UnionWith(mainSensorKeys);
         _widgetSensorKeys.Clear();
         _widgetSensorKeys.UnionWith(widgetSensorKeys);
+        _traySensorKey = traySensorKey;
 
         var temperatures = TemperatureReadingSelector.SelectDisplayTemperatures(readings);
-        UpdateDashboard(temperatures, history);
+        _lastTemperatures = temperatures;
+        UpdateDashboard(temperatures, thresholds, history);
         UpdateGrid(temperatures);
 
         _statusLabel.Text = temperatures.Count == 0
             ? "No temperature sensors detected."
-            : $"{temperatures.Count} temperature sensors detected. Tick Main or Widget to pin a sensor.";
+            : $"{temperatures.Count} temperature sensors detected. Tick Main, Widget, or Tray to pin a sensor.";
     }
 
     public void ShowError(string message)
@@ -108,6 +148,7 @@ internal sealed class DetailsForm : Form
 
         _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Main", HeaderText = "Main", FillWeight = 42 });
         _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Widget", HeaderText = "Widget", FillWeight = 52 });
+        _grid.Columns.Add(new DataGridViewCheckBoxColumn { Name = "Tray", HeaderText = "Tray", FillWeight = 42 });
         _grid.Columns.Add("Component", "Component");
         _grid.Columns.Add("Sensor", "Sensor");
         _grid.Columns.Add("Value", "Temperature");
@@ -131,7 +172,10 @@ internal sealed class DetailsForm : Form
         _grid.CellValueChanged += GridCellValueChanged;
     }
 
-    private void UpdateDashboard(IReadOnlyList<SensorReading> readings, SensorHistoryStore history)
+    private void UpdateDashboard(
+        IReadOnlyList<SensorReading> readings,
+        TemperatureThresholds thresholds,
+        SensorHistoryStore history)
     {
         var selectedReadings = readings
             .Where(reading => _mainSensorKeys.Contains(SensorReadingIdentity.CreateKey(reading)))
@@ -157,6 +201,7 @@ internal sealed class DetailsForm : Form
                 _dashboardPanel.Controls.Add(tile);
             }
 
+            tile.Thresholds = thresholds;
             tile.SetReading(reading, history.GetSamples(key));
         }
 
@@ -173,12 +218,13 @@ internal sealed class DetailsForm : Form
         _isUpdatingGrid = true;
         _grid.Rows.Clear();
 
-        foreach (var reading in readings)
+        foreach (var reading in readings.Where(IsVisibleReading))
         {
             var key = SensorReadingIdentity.CreateKey(reading);
             _grid.Rows.Add(
                 _mainSensorKeys.Contains(key),
                 _widgetSensorKeys.Contains(key),
+                string.Equals(_traySensorKey, key, StringComparison.OrdinalIgnoreCase),
                 SensorReadingIdentity.CreateTitle(reading),
                 SensorReadingIdentity.CreateSubtitle(reading),
                 FormatValue(reading),
@@ -188,6 +234,29 @@ internal sealed class DetailsForm : Form
         _isUpdatingGrid = false;
 
         RestoreGridPosition(firstDisplayedRowIndex, selectedKey);
+    }
+
+    private bool IsVisibleReading(SensorReading reading)
+    {
+        var selectedCategory = _categoryFilter.SelectedItem?.ToString();
+        if (!string.IsNullOrWhiteSpace(selectedCategory) && selectedCategory != "All")
+        {
+            var title = SensorReadingIdentity.CreateTitle(reading);
+            if (!string.Equals(title, selectedCategory, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        var search = _searchBox.Text.Trim();
+        if (search.Length == 0)
+        {
+            return true;
+        }
+
+        return reading.HardwareName.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || reading.SensorName.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || SensorReadingIdentity.CreateTitle(reading).Contains(search, StringComparison.OrdinalIgnoreCase);
     }
 
     private void RestoreGridPosition(int firstDisplayedRowIndex, string? selectedKey)
@@ -231,7 +300,7 @@ internal sealed class DetailsForm : Form
         }
 
         var columnName = _grid.Columns[e.ColumnIndex].Name;
-        if (columnName is not ("Main" or "Widget"))
+        if (columnName is not ("Main" or "Widget" or "Tray"))
         {
             return;
         }
@@ -247,6 +316,16 @@ internal sealed class DetailsForm : Form
         if (columnName == "Main")
         {
             _setMainSensor(key, isEnabled);
+            return;
+        }
+
+        if (columnName == "Tray")
+        {
+            if (isEnabled)
+            {
+                _setTraySensor(key);
+            }
+
             return;
         }
 

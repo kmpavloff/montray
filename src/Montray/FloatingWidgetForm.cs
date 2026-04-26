@@ -7,47 +7,88 @@ internal sealed class FloatingWidgetForm : Form
 {
     private const int WmNclButtonDown = 0xA1;
     private const int HtCaption = 0x2;
+    private const int WsExToolWindow = 0x00000080;
 
     private readonly FlowLayoutPanel _panel;
     private readonly ContextMenuStrip _contextMenu;
     private readonly Dictionary<string, TemperatureTileControl> _tiles = new(StringComparer.OrdinalIgnoreCase);
+    private TemperatureThresholds _thresholds = TemperatureThresholds.Default;
+    private bool _showSparkline = true;
 
     public FloatingWidgetForm(
+        Point? savedLocation,
+        bool alwaysOnTop,
+        double opacity,
+        bool showSparkline,
+        TemperatureThresholds thresholds,
         Action hideWidget,
         Action showDetails,
+        Action showSettings,
         Action exitApplication)
     {
         Text = "montray widget";
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
-        TopMost = true;
+        TopMost = alwaysOnTop;
         BackColor = Color.FromArgb(20, 23, 28);
         ForeColor = Color.White;
-        Size = new Size(340, 220);
+        Size = new Size(472, 62);
         MinimumSize = Size;
         MaximumSize = Size;
-        Opacity = 0.96;
+        Opacity = Math.Clamp(opacity, 0.35, 1.0);
+        _showSparkline = showSparkline;
+        _thresholds = thresholds.Normalize();
 
         var workingArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1280, 720);
-        Location = new Point(workingArea.Right - Width - 16, workingArea.Bottom - Height - 16);
+        Location = IsVisibleLocation(savedLocation, workingArea)
+            ? savedLocation!.Value
+            : new Point(workingArea.Right - Width - 16, workingArea.Bottom - Height - 16);
 
         _panel = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(10),
+            Padding = new Padding(8),
             BackColor = BackColor,
-            AutoScroll = true,
-            WrapContents = true
+            AutoScroll = false,
+            WrapContents = false
         };
 
         Controls.Add(_panel);
         MouseDown += BeginDrag;
         _panel.MouseDown += BeginDrag;
 
-        _contextMenu = BuildContextMenu(hideWidget, showDetails, exitApplication);
+        _contextMenu = BuildContextMenu(hideWidget, showDetails, showSettings, exitApplication);
         ContextMenuStrip = _contextMenu;
         _panel.ContextMenuStrip = _contextMenu;
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var createParams = base.CreateParams;
+            createParams.ExStyle |= WsExToolWindow;
+            return createParams;
+        }
+    }
+
+    public void ApplySettings(
+        bool alwaysOnTop,
+        double opacity,
+        bool showSparkline,
+        TemperatureThresholds thresholds)
+    {
+        TopMost = alwaysOnTop;
+        Opacity = Math.Clamp(opacity, 0.35, 1.0);
+        _showSparkline = showSparkline;
+        _thresholds = thresholds.Normalize();
+
+        foreach (var tile in _tiles.Values)
+        {
+            tile.ShowHistory = _showSparkline;
+            tile.Thresholds = _thresholds;
+        }
     }
 
     public void SetReadings(
@@ -73,6 +114,7 @@ internal sealed class FloatingWidgetForm : Form
         {
             return temperatures
                 .Where(reading => widgetSensorKeys.Contains(SensorReadingIdentity.CreateKey(reading)))
+                .Take(4)
                 .ToArray();
         }
 
@@ -100,7 +142,14 @@ internal sealed class FloatingWidgetForm : Form
             var key = SensorReadingIdentity.CreateKey(reading);
             if (!_tiles.TryGetValue(key, out var tile))
             {
-                tile = new TemperatureTileControl { Size = new Size(150, 92) };
+                tile = new TemperatureTileControl
+                {
+                    IsCompact = true,
+                    ShowHistory = _showSparkline,
+                    Thresholds = _thresholds,
+                    Size = new Size(106, 46),
+                    Margin = new Padding(0, 0, 8, 0)
+                };
                 tile.MouseDown += BeginDrag;
                 tile.ContextMenuStrip = _contextMenu;
                 _tiles.Add(key, tile);
@@ -116,14 +165,27 @@ internal sealed class FloatingWidgetForm : Form
     private static ContextMenuStrip BuildContextMenu(
         Action hideWidget,
         Action showDetails,
+        Action showSettings,
         Action exitApplication)
     {
         var menu = new ContextMenuStrip();
         menu.Items.Add("Hide widget", null, (_, _) => hideWidget());
         menu.Items.Add("Show details", null, (_, _) => showDetails());
+        menu.Items.Add("Settings", null, (_, _) => showSettings());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => exitApplication());
         return menu;
+    }
+
+    private static bool IsVisibleLocation(Point? location, Rectangle workingArea)
+    {
+        if (location is not { } point)
+        {
+            return false;
+        }
+
+        return workingArea.Contains(point)
+            || workingArea.Contains(new Point(point.X + 40, point.Y + 20));
     }
 
     private void BeginDrag(object? sender, MouseEventArgs e)

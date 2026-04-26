@@ -6,6 +6,8 @@ internal sealed class TemperatureTileControl : Control
 {
     private SensorReading? _reading;
     private IReadOnlyList<float> _history = Array.Empty<float>();
+    private TemperatureThresholds _thresholds = TemperatureThresholds.Default;
+    private bool _isCompact;
 
     public TemperatureTileControl()
     {
@@ -16,6 +18,35 @@ internal sealed class TemperatureTileControl : Control
         ForeColor = Color.White;
         Font = new Font("Segoe UI", 9f);
         Margin = new Padding(0, 0, 10, 10);
+    }
+
+    public bool IsCompact
+    {
+        get => _isCompact;
+        set
+        {
+            if (_isCompact == value)
+            {
+                return;
+            }
+
+            _isCompact = value;
+            MinimumSize = value ? new Size(104, 46) : new Size(150, 92);
+            Padding = value ? new Padding(9, 6, 9, 6) : new Padding(12, 10, 12, 10);
+            Invalidate();
+        }
+    }
+
+    public bool ShowHistory { get; set; } = true;
+
+    public TemperatureThresholds Thresholds
+    {
+        get => _thresholds;
+        set
+        {
+            _thresholds = value.Normalize();
+            Invalidate();
+        }
     }
 
     public void SetReading(SensorReading reading, IReadOnlyList<float> history)
@@ -38,8 +69,18 @@ internal sealed class TemperatureTileControl : Control
         using var background = new SolidBrush(BackColor);
         e.Graphics.FillRectangle(background, bounds);
 
-        DrawHistory(e.Graphics, bounds);
-        DrawText(e.Graphics, bounds);
+        if (IsCompact)
+        {
+            DrawCompact(e.Graphics, bounds);
+            return;
+        }
+
+        if (ShowHistory)
+        {
+            DrawHistory(e.Graphics, bounds);
+        }
+
+        DrawExpandedText(e.Graphics, bounds);
     }
 
     private void DrawHistory(Graphics graphics, Rectangle bounds)
@@ -65,8 +106,8 @@ internal sealed class TemperatureTileControl : Control
             })
             .ToArray();
 
-        using var fill = new SolidBrush(Color.FromArgb(22, SelectTemperatureColor(_history[^1])));
-        using var pen = new Pen(Color.FromArgb(180, SelectTemperatureColor(_history[^1])), 2f);
+        using var fill = new SolidBrush(Color.FromArgb(22, SelectTemperatureColor(_history[^1], Thresholds)));
+        using var pen = new Pen(Color.FromArgb(180, SelectTemperatureColor(_history[^1], Thresholds)), 2f);
         using var gridPen = new Pen(Color.FromArgb(36, 255, 255, 255), 1f);
 
         graphics.DrawLine(gridPen, graph.Left, graph.Bottom, graph.Right, graph.Bottom);
@@ -80,7 +121,7 @@ internal sealed class TemperatureTileControl : Control
         }
     }
 
-    private void DrawText(Graphics graphics, Rectangle bounds)
+    private void DrawExpandedText(Graphics graphics, Rectangle bounds)
     {
         if (_reading is null)
         {
@@ -117,13 +158,109 @@ internal sealed class TemperatureTileControl : Control
         graphics.DrawString(subtitle, subtitleFont, subtitleBrush, subtitleBounds, format);
     }
 
-    private static Color SelectTemperatureColor(float temperature)
+    private void DrawCompact(Graphics graphics, Rectangle bounds)
+    {
+        if (_reading is null)
+        {
+            return;
+        }
+
+        var temperature = _reading.Value;
+        var title = CreateCompactTitle(_reading);
+        var valueText = temperature is { } value ? $"{MathF.Round(value)}°" : "N/A";
+        var accentColor = temperature is { } current
+            ? SelectTemperatureColor(current, Thresholds)
+            : Color.FromArgb(120, 130, 142);
+
+        using var accentBrush = new SolidBrush(accentColor);
+        graphics.FillRectangle(accentBrush, new Rectangle(0, 0, 4, bounds.Height));
+
+        if (ShowHistory)
+        {
+            DrawCompactHistory(graphics, bounds, accentColor);
+        }
+
+        using var titleBrush = new SolidBrush(Color.FromArgb(185, 195, 207));
+        using var valueBrush = new SolidBrush(Color.White);
+        using var titleFont = new Font("Segoe UI", 10f, FontStyle.Bold, GraphicsUnit.Pixel);
+        using var valueFont = new Font("Segoe UI", 33f, FontStyle.Bold, GraphicsUnit.Pixel);
+        using var titleFormat = new StringFormat
+        {
+            Trimming = StringTrimming.None,
+            FormatFlags = StringFormatFlags.NoWrap,
+            LineAlignment = StringAlignment.Near
+        };
+        using var valueFormat = new StringFormat
+        {
+            Alignment = StringAlignment.Far,
+            LineAlignment = StringAlignment.Near,
+            FormatFlags = StringFormatFlags.NoWrap
+        };
+
+        var titleBounds = new RectangleF(
+            Padding.Left,
+            4,
+            bounds.Width - Padding.Horizontal,
+            12);
+        var valueBounds = new RectangleF(
+            Padding.Left,
+            7,
+            bounds.Width - Padding.Horizontal,
+            36);
+
+        graphics.DrawString(title, titleFont, titleBrush, titleBounds, titleFormat);
+        graphics.DrawString(valueText, valueFont, valueBrush, valueBounds, valueFormat);
+    }
+
+    private void DrawCompactHistory(Graphics graphics, Rectangle bounds, Color color)
+    {
+        if (_history.Count < 2)
+        {
+            return;
+        }
+
+        var min = MathF.Min(_history.Min(), 35f);
+        var max = MathF.Max(_history.Max(), 90f);
+        var range = MathF.Max(1f, max - min);
+        var graph = new Rectangle(
+            Padding.Left,
+            bounds.Bottom - Padding.Bottom - 5,
+            bounds.Width - Padding.Horizontal,
+            5);
+
+        var points = _history
+            .Select((value, index) =>
+            {
+                var x = graph.Left + (graph.Width * index / Math.Max(1, _history.Count - 1));
+                var y = graph.Bottom - ((value - min) / range * graph.Height);
+                return new PointF(x, y);
+            })
+            .ToArray();
+
+        using var pen = new Pen(Color.FromArgb(170, color), 1.5f);
+        graphics.DrawLines(pen, points);
+    }
+
+    private static string CreateCompactTitle(SensorReading reading)
+    {
+        return reading.Category switch
+        {
+            HardwareCategory.Cpu => "CPU",
+            HardwareCategory.Gpu => "GPU",
+            HardwareCategory.Memory => "RAM",
+            HardwareCategory.Storage => "SSD",
+            HardwareCategory.Motherboard => "MB",
+            _ => SensorReadingIdentity.CreateTitle(reading)
+        };
+    }
+
+    private static Color SelectTemperatureColor(float temperature, TemperatureThresholds thresholds)
     {
         return temperature switch
         {
-            >= 90 => Color.FromArgb(220, 64, 64),
-            >= 75 => Color.FromArgb(228, 118, 49),
-            >= 60 => Color.FromArgb(218, 166, 51),
+            var value when value >= thresholds.Critical => Color.FromArgb(220, 64, 64),
+            var value when value >= thresholds.Hot => Color.FromArgb(228, 118, 49),
+            var value when value >= thresholds.Warm => Color.FromArgb(218, 166, 51),
             _ => Color.FromArgb(50, 168, 113)
         };
     }
