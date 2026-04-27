@@ -1,15 +1,28 @@
 # Codex Handoff
 
-This project is a planned Windows-only tray utility called montray. The user wants a small app that shows CPU and GPU temperature, and possibly other hardware parameters later.
+This project is a Windows-only tray utility called montray. It shows hardware temperatures in the notification area and keeps the tray app small, practical, and tray-first.
+
+## Current State
+
+- WinForms tray app targeting `net8.0-windows`.
+- Dynamic tray icon with CPU/GPU temperature rows.
+- Floating widget with CPU, GPU, RAM, and SSD temperatures.
+- Details window with summarized current temperatures.
+- Tray menu with details, widget toggle, refresh, service management, and exit actions.
+- Optional Windows Service for elevated sensor access without running the tray app as administrator.
+- Sensor backend powered by `LibreHardwareMonitorLib`.
+- Missing or unavailable sensors are displayed as `N/A`.
 
 ## Decisions Already Made
 
-- Use WinForms rather than Tauri, WPF, or WinUI 3 for the MVP.
+- Use WinForms rather than Tauri, WPF, WinUI 3, or a web UI for the desktop app.
 - Use .NET 8 or newer.
 - Use `LibreHardwareMonitorLib` for sensor access.
-- Build and run from Windows PowerShell or Windows Terminal.
+- Keep the tray app non-elevated by default.
+- Use the optional Windows Service when elevated access is needed for better sensor coverage.
+- Build, run, tray testing, service testing, and hardware validation should happen on Windows.
 - Do not rely on WSL2 Linux `dotnet` for building/running WinForms.
-- Editing code from WSL is acceptable; build and hardware validation happen manually on Windows.
+- Editing code from WSL is acceptable, but Windows validation is required.
 
 ## Environment Guidance
 
@@ -19,12 +32,11 @@ Recommended project location on Windows:
 C:\dev\montray
 ```
 
-Build and run commands:
+Restore and build:
 
 ```powershell
-dotnet restore .\src\Montray\Montray.csproj
-dotnet build .\src\Montray\Montray.csproj
-dotnet run --project .\src\Montray\Montray.csproj
+dotnet restore .\Montray.sln
+dotnet build .\Montray.sln
 ```
 
 Run unit tests:
@@ -33,40 +45,78 @@ Run unit tests:
 dotnet test .\tests\Montray.Core.Tests\Montray.Core.Tests.csproj
 ```
 
-## Implementation Plan
+Run project-wide checks similar to CI:
 
-1. Maintain a WinForms project targeting `net8.0-windows`.
-2. Keep `LibreHardwareMonitorLib` as the sensor backend.
-3. Use an application context that owns a `NotifyIcon`.
-4. Poll sensors every 1-2 seconds.
-5. Normalize readings into a small model.
-6. Update the tray tooltip with CPU and GPU temperature when available.
-7. Keep a tray menu with `Show details`, `Refresh sensors`, and `Exit`.
-8. Keep a simple details form that lists detected sensors.
-9. Handle missing sensors gracefully: show `N/A` rather than failing.
-10. Only after the MVP works, consider dynamic tray icons, autostart, thresholds, and history graphs.
+```powershell
+dotnet restore .\Montray.sln
+dotnet build .\Montray.sln --configuration Release --no-restore
+dotnet test .\Montray.sln --configuration Release --no-build
+```
 
-## Suggested Structure
+Run locally:
 
-- `src/Montray/Program.cs`: application entry point.
-- `src/Montray/TrayApplicationContext.cs`: tray icon, menu, timer, and lifetime.
-- `src/Montray/Hardware/HardwareMonitorService.cs`: LibreHardwareMonitor integration.
-- `src/Montray.Core/SensorReading.cs`: normalized sensor reading model.
-- `src/Montray.Core/TrayTooltipFormatter.cs`: tray tooltip formatting.
-- `src/Montray/DetailsForm.cs`: simple readings window.
+```powershell
+dotnet run --project .\src\Montray\Montray.csproj
+```
 
-Keep LibreHardwareMonitor usage inside `HardwareMonitorService`. Forms and tray code should consume normalized readings, not raw hardware objects.
+Manual service commands:
 
-## Technical Notes
+```powershell
+.\scripts\install-service.ps1 -ServiceExePath .\src\Montray.Service\bin\Debug\net8.0-windows\montray-service.exe
+.\scripts\uninstall-service.ps1
+```
 
-- WinForms `NotifyIcon` is the main reason for choosing WinForms.
-- WinUI 3 was discussed and rejected for MVP because tray integration is less direct.
-- Tauri was discussed and rejected for MVP because sensor access still needs native integration and adds unnecessary WebView/Rust/Node complexity.
-- Dynamic tray icon text is a later feature; start with tooltip updates unless the user explicitly changes priority.
-- Some hardware sensors may require elevated privileges or may not be exposed by the library. The app should degrade gracefully.
+## Project Structure
+
+- `src/Montray`: WinForms tray app, forms, tray icon rendering, widget, user settings, and service-management UI glue.
+- `src/Montray.Core`: normalized sensor models, tooltip formatting, temperature selection, named-pipe constants/client types.
+- `src/Montray.Hardware`: `LibreHardwareMonitorLib` integration. Keep hardware-library-specific code here.
+- `src/Montray.Service`: Windows Service host that reads sensors with elevated rights and exposes readings over a local named pipe.
+- `tests/Montray.Core.Tests`: unit tests for core behavior.
+- `docs`: user/developer documentation.
+- `scripts`: service install/uninstall PowerShell scripts.
+- `.github/workflows`: CI and release automation.
+
+Important files:
+
+- `src/Montray/Program.cs`: WinForms entry point.
+- `src/Montray/TrayApplicationContext.cs`: tray icon, menu, polling, and app lifetime.
+- `src/Montray/TrayTemperatureIconRenderer.cs`: dynamic tray icon rendering.
+- `src/Montray/FloatingWidgetForm.cs`: compact always-available temperature widget.
+- `src/Montray/DetailsForm.cs`: current readings/details window.
+- `src/Montray/SettingsForm.cs`: user settings UI.
+- `src/Montray/ServiceManagement/SensorServiceManager.cs`: service install/uninstall/status integration.
+- `src/Montray.Hardware/HardwareMonitorService.cs`: sensor backend implementation.
+- `src/Montray.Service/SensorServiceHost.cs`: named-pipe service endpoint.
+
+## Architecture Notes
+
+- UI code should consume normalized `SensorReading` values, not raw LibreHardwareMonitor objects.
+- Keep LibreHardwareMonitor-specific code inside `src/Montray.Hardware`.
+- The tray app should first try the optional service through the named-pipe client, then fall back to local non-elevated sensor reads when the service is missing or unavailable.
+- The tray app must continue to work when the service is not installed.
+- Service install/uninstall requires UAC and is launched through PowerShell scripts.
+- Any hardware data can be unavailable depending on permissions, motherboard, BIOS, drivers, and LibreHardwareMonitor support.
+- Favor graceful degradation and clear `N/A` values over exceptions or blocking startup.
+
+## Release Notes
+
+- Releases are created from tags named like `v0.1.0`.
+- The release workflow publishes a self-contained `win-x64` zip and attaches it to a GitHub Release.
+- The app distribution should include `montray.exe`, `montray-service.exe`, service scripts, user-facing README, license, and third-party notices.
+- There is no installer, autostart setting, or code signing yet.
+
+## Future Work
+
+- Autostart option.
+- Installer.
+- Code signing.
+- Threshold notifications.
+- History graphs.
+- Broader tests around UI-independent selection/formatting/service-client behavior.
 
 ## User Preferences
 
-- The app should be small and tray-first.
-- Prioritize practical implementation over visual polish for the first version.
+- The app should stay small and tray-first.
+- Prioritize practical implementation over visual polish.
 - Communicate in Russian unless the user switches language.
