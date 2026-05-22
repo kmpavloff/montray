@@ -56,3 +56,6 @@ $RECYCLE.BIN/
 .env
 .env.*
 !.env.example
+
+# Editor/IDE caches
+*.lscache
