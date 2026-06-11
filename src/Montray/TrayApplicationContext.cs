@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Montray.Core;
 using Montray.Hardware;
 using Montray.ServiceManagement;
@@ -7,6 +8,7 @@ namespace Montray;
 public sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly HardwareMonitorService _hardwareMonitor;
+    private readonly ILogger<TrayApplicationContext> _logger;
     private readonly SensorPipeClient _sensorPipeClient = new();
     private readonly SensorServiceManager _sensorServiceManager = new();
     private readonly NotifyIcon _notifyIcon;
@@ -39,9 +41,10 @@ public sealed class TrayApplicationContext : ApplicationContext
     private string? _serviceOperationText;
     private DateTime _serviceOperationPollUntil;
 
-    public TrayApplicationContext(HardwareMonitorService hardwareMonitor)
+    public TrayApplicationContext(HardwareMonitorService hardwareMonitor, ILogger<TrayApplicationContext> logger)
     {
         _hardwareMonitor = hardwareMonitor;
+        _logger = logger;
         LoadUserSelection();
 
         _summaryMenuItem = new ToolStripMenuItem("CPU N/A | GPU N/A")
@@ -141,6 +144,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Failed to update sensor readings.");
             _notifyIcon.Text = TrayTooltipFormatter.FormatSummary(Array.Empty<SensorReading>());
             UpdateTrayIcon();
             _detailsForm?.ShowError(ex.Message);
@@ -161,6 +165,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         }
         catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Refresh hardware failed.");
             _detailsForm?.ShowError(ex.Message);
         }
 
@@ -596,11 +601,13 @@ public sealed class TrayApplicationContext : ApplicationContext
                 _widgetShowSparkline,
                 _thresholds.Normalize()));
         }
-        catch (IOException)
+        catch (IOException ex)
         {
+            _logger.LogWarning(ex, "Failed to save user settings to disk.");
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
+            _logger.LogWarning(ex, "No permission to save user settings.");
         }
     }
 

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.ServiceProcess;
 using Montray.Core;
 
@@ -20,7 +21,14 @@ public sealed class SensorWindowsService : ServiceBase
     protected override void OnStart(string[] args)
     {
         _cancellation = new CancellationTokenSource();
-        _host = new SensorServiceHost();
+
+        using var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.AddDebug();
+            builder.SetMinimumLevel(LogLevel.Information);
+        });
+
+        _host = new SensorServiceHost(loggerFactory.CreateLogger<SensorServiceHost>());
         _serviceTask = Task.Run(() => _host.RunAsync(_cancellation.Token));
     }
 

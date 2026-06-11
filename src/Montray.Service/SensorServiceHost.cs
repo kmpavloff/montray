@@ -2,6 +2,7 @@ using System.IO.Pipes;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Montray.Core;
 using Montray.Hardware;
 
@@ -13,7 +14,13 @@ public sealed class SensorServiceHost : IDisposable
 
     private readonly HardwareMonitorService _hardwareMonitor = new();
     private readonly SemaphoreSlim _hardwareAccess = new(1, 1);
+    private readonly ILogger<SensorServiceHost> _logger;
     private bool _disposed;
+
+    public SensorServiceHost(ILogger<SensorServiceHost>? logger = null)
+    {
+        _logger = logger ?? LoggerFactory.Create(builder => { }).CreateLogger<SensorServiceHost>();
+    }
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
@@ -38,11 +45,17 @@ public sealed class SensorServiceHost : IDisposable
             {
                 return;
             }
-            catch (IOException)
+            catch (IOException ex)
             {
+                _logger.LogWarning(ex, "Named pipe I/O error in sensor service host.");
             }
-            catch (UnauthorizedAccessException)
+            catch (UnauthorizedAccessException ex)
             {
+                _logger.LogWarning(ex, "Named pipe access denied in sensor service host.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error in sensor service host loop.");
             }
         }
     }

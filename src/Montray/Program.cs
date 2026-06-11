@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Montray.Hardware;
 
 namespace Montray;
@@ -26,7 +27,14 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
 
+        using var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.AddDebug();
+            builder.SetMinimumLevel(LogLevel.Information);
+        });
+        var logger = loggerFactory.CreateLogger<TrayApplicationContext>();
+
         using var hardwareMonitor = new HardwareMonitorService();
-        Application.Run(new TrayApplicationContext(hardwareMonitor));
+        Application.Run(new TrayApplicationContext(hardwareMonitor, logger));
     }
 }
